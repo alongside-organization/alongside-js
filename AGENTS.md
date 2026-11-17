@@ -3,7 +3,7 @@
 Keep this document brief and actionable. Replace stale guidance and link to detail.
 
 - Read [README.md](README.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
-- This is an empty TypeScript scaffold with formatting tooling. Use pnpm; tests, type checking and builds are not configured.
+- Use pnpm and Node 24+. Run the README's tests, type checking, build and formatting checks.
 - Keep `src/index.ts` as the public entry point. Put lifecycle in `client.ts`, wire types in `events.ts`, session logic in `session.ts` and delivery in `delivery/`.
 - Keep the core independent of frameworks, travel data and website UI. Add adapters only for real integration needs.
 - Imports must be safe during server rendering. Access browser APIs during initialization and clean up timers/listeners.
@@ -15,5 +15,6 @@ Keep this document brief and actionable. Replace stale guidance and link to deta
 - Use Ponytail; do not reload rules already injected. Load `ponytail-review` when needed without requiring user activation.
 - Use available `sol-reviewer` sub-agents for consequential changes or requested independent review. Supply requirements, a stable diff and verification evidence; resolve blocking findings. If unavailable, review locally and report the limitation.
 - Keep documentation brief and accurate; update setup, examples and contracts when behaviour changes.
-- Commit in small logical blocks with short, imperative messages. Keep unrelated edits separate.
+- Commit completed, verified work as you go in small logical commits with short, imperative messages. Keep unrelated edits separate; do not leave all commits until the end.
+- Add short comments where lifecycle, session or delivery decisions are hard to follow. Explain their purpose or reason without narrating obvious code.
 - Follow CONTRIBUTING.md before merging. Publishing packages and deployment require authorization.
