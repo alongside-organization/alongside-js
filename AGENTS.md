@@ -3,6 +3,7 @@
 Keep this document brief and actionable. Replace stale guidance and link to detail.
 
 - Read [README.md](README.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+- Before starting work, search Linear for a relevant issue. If one matches, use its `gitBranchName` for the work branch so Linear can track it; preserve existing work when switching branches. If none matches or Linear is unavailable, say so and continue.
 - Use pnpm and Node 24+. Run the README's tests, type checking, build and formatting checks.
 - Keep `src/index.ts` as the public entry point. Put lifecycle in `client.ts`, wire types in `events.ts`, session logic in `session.ts` and delivery in `delivery/`.
 - Keep the core independent of frameworks, travel data and website UI. Add adapters only for real integration needs.
