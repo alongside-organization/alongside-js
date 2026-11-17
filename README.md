@@ -1,46 +1,51 @@
 # Alongside JavaScript SDK
 
-Keep this document brief and current. Link to detail instead of duplicating it.
+Framework-independent browser events for the local Alongside prototype. No runtime dependencies, travel types, UI or automatic content capture. Server-side imports are safe; initialize in a browser lifecycle.
 
-A framework-independent TypeScript browser SDK. Websites report facts through `track(name, properties)`; the SDK manages session identity and delivery to the backend. Travel-specific events and UI belong to the integrating website.
+## Setup
 
-**Status:** formatting is configured; source and tests are empty placeholders. The runtime API, TypeScript build and executable tests are not implemented.
+Use Node 24+ and pnpm:
 
-## Layout
-
-```text
-src/index.ts                      Public exports
-src/client.ts                     Initialization, track, flush and cleanup
-src/events.ts                     JSON properties and wire event types
-src/session.ts                    Shared session identity, tab identity and expiry
-src/delivery/queue.ts              Batching, bounded queues and retry scheduling
-src/delivery/transport.ts          HTTP and page-exit delivery
-tests/client.test.ts               Public behaviour and lifecycle tests
-tests/session.test.ts              Storage, expiry and session tests
-tests/delivery/queue.test.ts
-tests/delivery/transport.test.ts
+```sh
+pnpm install
+pnpm build
 ```
 
-Tests live in `tests/`, mirroring `src/`.
+```ts
+import { createAlongside } from "alongside-js";
 
-`client` coordinates session and delivery modules. Keep those modules independent of frameworks and travel data. Add React/Vue adapters only when an actual integration needs one.
+const alongside = createAlongside({ endpoint: "http://localhost:8080/events" });
+alongside.track("listing_viewed", { listing_id: "stay-123" });
+await alongside.flush();
+// On integration teardown:
+await alongside.destroy();
+```
 
-## Behaviour to implement
+`track` captures a JSON copy and returns immediately. Invalid, unserializable or oversized events are dropped without interrupting the website. `flush()` attempts currently deliverable events; failures retain their retry schedule. `destroy()` stops collection, attempts beacon delivery, aborts outstanding HTTP work and removes timers/listeners.
 
-- Safe server-side import; start browser resources only during explicit initialization.
-- Stable event IDs and capture timestamps across retries.
-- Shared sessions across tabs, distinct tab IDs and expiry rules.
-- Timer-based batches, bounded memory/retries and best-effort page-exit delivery.
-- Cleanup of timers and listeners. Delivery errors must leave the host website usable.
+## Selected prototype defaults
 
-## Setup and verification
+These defaults were selected for this implementation and can be changed on request. Only the endpoint is currently configurable through the public API.
 
-Use pnpm. Run `pnpm install` to install the pinned formatter. Next: choose Node/browser targets, configure TypeScript and a build, then implement the empty files.
+- Modern browsers. Web Locks serialize shared session creation/expiry; without them, simultaneous first creation can race.
+- Same-origin tabs share a localStorage session: 30 minutes of explicit-event inactivity or 24 hours maximum. SessionStorage distinguishes tabs and retains their identity on ordinary reload/navigation; duplicated tabs discard copied identity. Denied storage falls back to document memory.
+- Three-second batches, at most 100 events and 64 KiB UTF-8 per request. At most 1,000 pending/in-flight events, including captures awaiting identity; drop newest on overflow.
+- Retry network failures, 408, 429 and 5xx: at most three network retries and ten retries total per batch. Backoff starts at three seconds, doubles to a 30-minute base cap, and uses 50–150% jitter. Ten-second request timeout. Offline pauses delivery; online resumes it.
+- In-memory pending events/retries. Hidden/page-exit lifecycle attempts `sendBeacon`. Delivery is best effort: termination can lose events and in-flight requests may be duplicated. No durable queue or receipt deduplication.
+- Automatic fields: event UUID, ISO UTC capture timestamp, session UUID, tab UUID and pathname. No query, fragment, referrer, fingerprint, form text or project key. Fetch omits credentials. Retries preserve the exact encoded batch.
 
-Format with `pnpm format`; check with `pnpm format:check`. Prettier formats TypeScript, JSON and Markdown with two-space indentation, double quotes, semicolons, trailing commas and a 100-column wrapping target. EditorConfig sets UTF-8, LF and final newlines. Generated output and the pnpm lockfile are excluded.
+The backend owns the wire contract in `alongside-backend/docs/events.md`. Event names/properties belong to the website. Context processing and model calls are outside this stage.
 
-Expose `pnpm test`, `pnpm typecheck` and `pnpm build` when tooling exists. These are planned commands, not currently runnable scripts.
+## Layout and verification
 
-Prefer Node's built-in test runner if it supports the chosen setup. Use controlled clocks and transport responses for unit tests; use a real browser for cross-tab identity, navigation/refresh, storage failures and page-exit behaviour. Check representative batches against the real local backend. Empty test files are not test coverage.
+`src/index.ts` exports the client and wire types; `client.ts` owns lifecycle, `events.ts` wire types/limits, `session.ts` identity and `delivery/` batching/transport. `tests/` mirrors these modules using Node's built-in runner with controlled clocks/network responses.
 
-Read [AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md). The backend owns the submission contract at `alongside-backend/docs/events.md`; a sibling checkout is needed only for integration checks, not SDK unit tests.
+```sh
+pnpm test
+pnpm typecheck
+pnpm build
+pnpm format
+pnpm format:check
+```
+
+Build output is ESM JavaScript plus declarations in `dist/`. Check package exports when packaging changes. SDK unit tests need no sibling checkout. Real-browser checks live in `test-site/tests/alongside-flow.js`. Read [AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
