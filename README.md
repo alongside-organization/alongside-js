@@ -15,6 +15,7 @@ pnpm build
 import { createAlongside } from "alongside-js";
 
 const alongside = createAlongside({ endpoint: "http://localhost:8080/events" });
+alongside.page(); // On initial load and after pathname changes.
 alongside.track("listing_viewed", { listing_id: "stay-123" });
 await alongside.flush();
 // On integration teardown:
@@ -28,17 +29,19 @@ await alongside.destroy();
 These defaults were selected for this implementation and can be changed on request. Only the endpoint is currently configurable through the public API.
 
 - Modern browsers. Web Locks serialize shared session creation/expiry; without them, simultaneous first creation can race.
-- Same-origin tabs share a localStorage session: 30 minutes of explicit-event inactivity or 24 hours maximum. SessionStorage distinguishes tabs and retains their identity on ordinary reload/navigation; duplicated tabs discard copied identity. Denied storage falls back to document memory.
+- Same-origin tabs share a localStorage session: 30 minutes without captured events or 24 hours maximum. Opted-in visible-page updates count as activity. SessionStorage distinguishes tabs and retains their identity on ordinary reload/navigation; duplicated tabs discard copied identity. Denied storage falls back to document memory.
 - Three-second batches, at most 100 events and 64 KiB UTF-8 per request. At most 1,000 pending/in-flight events, including captures awaiting identity; drop newest on overflow.
 - Retry network failures, 408, 429 and 5xx: at most three network retries and ten retries total per batch. Backoff starts at three seconds, doubles to a 30-minute base cap, and uses 50–150% jitter. Ten-second request timeout. Offline pauses delivery; online resumes it.
-- In-memory pending events/retries. Hidden/page-exit lifecycle attempts `sendBeacon`. Delivery is best effort: termination can lose events and in-flight requests may be duplicated. No durable queue or receipt deduplication.
+- In-memory pending events/retries. Hidden/page-exit lifecycle attempts `sendBeacon`. Delivery is best effort: termination can lose events and in-flight requests may be duplicated. No durable queue; the backend deduplicates retained event IDs.
 - Automatic fields: event UUID, ISO UTC capture timestamp, session UUID, tab UUID and pathname. No query, fragment, referrer, fingerprint, form text or project key. Fetch omits credentials. Retries preserve the exact encoded batch.
 
-The backend owns the wire contract in `alongside-backend/docs/events.md`. Event names/properties belong to the website. Context processing and model calls are outside this stage.
+`page()` opts into generic visits: call it initially and after pathname navigation. Calls on the same pathname do nothing; query/hash changes are ignored. A new document or bfcache restoration starts a new visit. `page_viewed` begins the visit; `page_updated` reports cumulative monotonic visible time every ten seconds while visible, at visibility changes, and on departure. Both include `visit_id`, `started_at`, `visible_ms` and `state` (`visible`, `hidden`, `left`). Departures retain the old pathname. Hidden time is excluded; attention is not inferred. There is no automatic History API patching or page-content capture.
+
+The backend owns the wire contract in `alongside-backend/docs/events.md`, including these reserved page events. Other event names/properties belong to the website. Model calls are outside this stage.
 
 ## Layout and verification
 
-`src/index.ts` exports the client and wire types; `client.ts` owns lifecycle, `events.ts` wire types/limits, `session.ts` identity and `delivery/` batching/transport. `tests/` mirrors these modules using Node's built-in runner with controlled clocks/network responses.
+`src/index.ts` exports the client and wire types; `client.ts` owns lifecycle, `pages.ts` visible-page sampling, `events.ts` wire types/limits, `session.ts` identity and `delivery/` batching/transport. `tests/` mirrors these modules using Node's built-in runner with controlled clocks/network responses.
 
 ```sh
 pnpm test
