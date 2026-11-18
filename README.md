@@ -52,3 +52,23 @@ pnpm format:check
 ```
 
 Build output is ESM JavaScript plus declarations in `dist/`. Check package exports when packaging changes. SDK unit tests need no sibling checkout. Real-browser checks live in `test-site/tests/alongside-flow.js`. Read [AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Popup entry
+
+The website opts into updates with `client.popup.watch(callback)` (one subscriber;
+returns an unsubscribe function), reports explicit `popup.presence({ visible,
+focused, payment, typingAt })`, and sends `popup.act(action, invitationId)`.
+Actions are `shown`, `dismiss`, `open`, `close`. Treat `offer` as pending: request `shown` with its ID, then render only the
+acknowledged `current`. An existing `current` stays visible while a replacement
+awaits display approval. `typingAt` is a local timestamp only: the request contains an
+age, never a key or field value. The website decides which pages block payment.
+
+Updates use a fixed `/interventions` path at the event endpoint's origin, once a
+second after completion, with no credentials. A single request runs at a time;
+clicks have an eight-request queue and a ten-second timeout. Failed polls retry
+on the next poll; failed actions return false so the website can offer retry.
+Polling does not capture events, renew session identity or change SDK telemetry.
+Responses are limited to 16 KiB and expose only the current invitation and chat
+entry flags. Session evidence and model calls remain on the backend. Destroy
+aborts polling and removes the subscription. The backend owns cross-tab state;
+this local prototype is not a production authorization scheme.
