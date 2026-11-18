@@ -6,6 +6,7 @@ export type Invitation = {
   status: "offered" | "shown" | "dismissed" | "opened";
 };
 export type Popup = {
+  offer?: Invitation | null;
   current: Invitation | null;
   chat_open: boolean;
   engaged: boolean;
@@ -149,6 +150,11 @@ function validPopup(value: Popup): boolean {
   )
     return false;
   const c = value.current;
+  if (value.offer !== undefined && !validInvitation(value.offer)) return false;
+  return validInvitation(c);
+}
+
+function validInvitation(c: Invitation | null): boolean {
   return (
     c === null ||
     (typeof c === "object" &&

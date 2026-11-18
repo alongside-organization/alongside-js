@@ -58,8 +58,9 @@ Build output is ESM JavaScript plus declarations in `dist/`. Check package expor
 The website opts into updates with `client.popup.watch(callback)` (one subscriber;
 returns an unsubscribe function), reports explicit `popup.presence({ visible,
 focused, payment, typingAt })`, and sends `popup.act(action, invitationId)`.
-Actions are `shown`, `dismiss`, `open`, `close`. Report `shown` when the invitation
-actually renders. `typingAt` is a local timestamp only: the request contains an
+Actions are `shown`, `dismiss`, `open`, `close`. Treat `offer` as pending: request `shown` with its ID, then render only the
+acknowledged `current`. An existing `current` stays visible while a replacement
+awaits display approval. `typingAt` is a local timestamp only: the request contains an
 age, never a key or field value. The website decides which pages block payment.
 
 Updates use a fixed `/interventions` path at the event endpoint's origin, once a
