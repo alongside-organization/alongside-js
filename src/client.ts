@@ -1,3 +1,4 @@
+import { createPopup } from "./popup.ts";
 import { createQueue } from "./delivery/queue.ts";
 import { createSession } from "./session.ts";
 import { createPages } from "./pages.ts";
@@ -11,6 +12,8 @@ export function createAlongside({ endpoint }: Options) {
   if (!/^https?:$/.test(url.protocol)) throw new Error("Alongside needs an HTTP(S) endpoint.");
   const session = createSession();
   const queue = createQueue(url.href);
+  let identity: { session_id: string; tab_id: string } | undefined;
+  const popup = createPopup(url.href, () => identity);
   // Identity lookup is asynchronous, so flush and capacity must include captures waiting on it.
   const captures = new Set<Promise<void>>();
   let closing = false;
@@ -52,6 +55,7 @@ export function createAlongside({ endpoint }: Options) {
         .capture(now)
         .then((identity) => {
           queue.add({ ...event, ...identity } satisfies Event);
+          rememberIdentity(identity);
         })
         .catch(() => {})
         .finally(() => captures.delete(capture));
@@ -61,7 +65,12 @@ export function createAlongside({ endpoint }: Options) {
     }
   }
 
+  function rememberIdentity(value: { session_id: string; tab_id: string }) {
+    identity = value;
+  }
+
   return {
+    popup,
     track(name: string, properties: Properties = {}) {
       track(name, properties);
     },
@@ -74,6 +83,7 @@ export function createAlongside({ endpoint }: Options) {
       if (closing) return;
       pages.destroy();
       closing = true;
+      popup.destroy();
       window.removeEventListener("pagehide", exit);
       document.removeEventListener("visibilitychange", hidden);
       session.destroy();
