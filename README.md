@@ -26,7 +26,7 @@ await alongside.destroy();
 
 ## Selected prototype defaults
 
-These defaults were selected for this implementation and can be changed on request. Only the endpoint is currently configurable through the public API.
+Only the endpoint is configurable; the rest are prototype defaults.
 
 - Modern browsers. Web Locks serialize shared session creation/expiry; without them, simultaneous first creation can race.
 - Same-origin tabs share a localStorage session: 30 minutes without captured events or 24 hours maximum. Opted-in visible-page updates count as activity. SessionStorage distinguishes tabs and retains their identity on ordinary reload/navigation; duplicated tabs discard copied identity. Denied storage falls back to document memory.
@@ -37,7 +37,7 @@ These defaults were selected for this implementation and can be changed on reque
 
 `page()` opts into generic visits: call it initially and after pathname navigation. Calls on the same pathname do nothing; query/hash changes are ignored. A new document or bfcache restoration starts a new visit. `page_viewed` begins the visit; `page_updated` reports cumulative monotonic visible time every ten seconds while visible, at visibility changes, and on departure. Both include `visit_id`, `started_at`, `visible_ms` and `state` (`visible`, `hidden`, `left`). Departures retain the old pathname. Hidden time is excluded; attention is not inferred. There is no automatic History API patching or page-content capture.
 
-The backend owns the wire contract in `alongside-backend/docs/events.md`, including these reserved page events. Other event names/properties belong to the website. Model calls are outside this stage.
+The backend owns the wire contract (`alongside-backend/docs/events.md`), including these page events. Other event names and properties belong to the website. The SDK never calls models.
 
 ## Layout and verification
 
@@ -51,24 +51,14 @@ pnpm format
 pnpm format:check
 ```
 
-Build output is ESM JavaScript plus declarations in `dist/`. Check package exports when packaging changes. SDK unit tests need no sibling checkout. Real-browser checks live in `test-site/tests/alongside-flow.js`. Read [AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+Build output is ESM plus declarations in `dist/`. Real-browser checks live in `test-site/tests/alongside-flow.js`.
 
 ## Popup entry
 
-The website opts into updates with `client.popup.watch(callback)` (one subscriber;
-returns an unsubscribe function), reports explicit `popup.presence({ visible,
-focused, payment, typingAt })`, and sends `popup.act(action, invitationId)`.
-Actions are `shown`, `dismiss`, `open`, `close`. Treat `offer` as pending: request `shown` with its ID, then render only the
-acknowledged `current`. An existing `current` stays visible while a replacement
-awaits display approval. `typingAt` is a local timestamp only: the request contains an
-age, never a key or field value. The website decides which pages block payment.
+- `client.popup.watch(callback)` subscribes to popup state (one subscriber; returns an unsubscribe function).
+- `popup.presence({ visible, focused, payment, typingAt })` reports presence. `typingAt` is local only; requests carry an age, never keys or values.
+- `popup.act(action, invitationId)` sends `shown`, `dismiss`, `open` or `close`.
 
-Updates use a fixed `/interventions` path at the event endpoint's origin, once a
-second after completion, with no credentials. A single request runs at a time;
-clicks have an eight-request queue and a ten-second timeout. Failed polls retry
-on the next poll; failed actions return false so the website can offer retry.
-Polling does not capture events, renew session identity or change SDK telemetry.
-Responses are limited to 16 KiB and expose only the current invitation and chat
-entry flags. Session evidence and model calls remain on the backend. Destroy
-aborts polling and removes the subscription. The backend owns cross-tab state;
-this local prototype is not a production authorization scheme.
+Treat `offer` as pending: request `shown` with its ID, then render only the acknowledged `current`. The website decides which pages count as payment.
+
+The SDK polls the fixed `/interventions` path at the event endpoint's origin, once a second after each response, one request at a time and without credentials. Actions queue up to eight, with a 10 s timeout; failed actions return false. Responses are capped at 16 KiB and contain only the invitation and chat flags. Polling does not create events or renew the session. The backend owns cross-tab state and timing.
