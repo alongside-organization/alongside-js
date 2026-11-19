@@ -58,7 +58,8 @@ Build output is ESM plus declarations in `dist/`. Real-browser checks live in `t
 - `client.popup.watch(callback)` subscribes to popup state (one subscriber; returns an unsubscribe function).
 - `popup.presence({ visible, focused, payment, typingAt })` reports presence. `typingAt` is local only; requests carry an age, never keys or values.
 - `popup.act(action, invitationId)` sends `shown`, `dismiss`, `open` or `close`.
+- `popup.say(text)` sends one chat message (1–500 characters) to `/chat` while chat is open and resolves `true` when accepted. The reply arrives through `watch` as `messages`, with `chat_pending` true meanwhile. Render message text as plain text.
 
 Treat `offer` as pending: request `shown` with its ID, then render only the acknowledged `current`. The website decides which pages count as payment.
 
-The SDK polls the fixed `/interventions` path at the event endpoint's origin, once a second after each response, one request at a time and without credentials. Actions queue up to eight, with a 10 s timeout; failed actions return false. Responses are capped at 16 KiB and contain only the invitation and chat flags. Polling does not create events or renew the session. The backend owns cross-tab state and timing.
+The SDK polls the fixed `/interventions` path at the event endpoint's origin, once a second after each response, one request at a time and without credentials. Actions queue up to eight, with a 10 s timeout; failed actions return false. Responses are capped at 256 KiB and contain only the invitation, chat flags and the shared conversation. Polling does not create events or renew the session. The backend owns cross-tab state and timing.

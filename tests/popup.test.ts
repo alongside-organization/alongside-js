@@ -54,7 +54,7 @@ test("stale sessions, oversized responses and failures never publish", async (t)
   release(new Response(JSON.stringify(state)));
   await settle();
   assert.equal(last, null);
-  env.fetch.mock.mockImplementation(async () => new Response("x".repeat(20000)));
+  env.fetch.mock.mockImplementation(async () => new Response("x".repeat(300_000)));
   assert.equal(await popup.act("shown", "invite-1"), false);
   env.fetch.mock.mockImplementation(async () => {
     throw new Error("offline");
@@ -99,5 +99,50 @@ test("replacing a watched subscription aborts obsolete work and keeps one loop",
   t.mock.timers.tick(10000);
   await settle();
   assert.equal(env.fetch.mock.callCount(), end);
+  popup.destroy();
+});
+test("say posts one trimmed message, refreshes state and rejects invalid text or conversations", async (t) => {
+  const env = browser(t);
+  const chat = {
+    ...state,
+    chat_open: true,
+    engaged: true,
+    chat_pending: true,
+    messages: [{ role: "visitor", text: "Any pools?", at: "2026-11-19T12:00:00Z" }],
+  };
+  env.fetch.mock.mockImplementation(async (url: string) =>
+    String(url).endsWith("/chat")
+      ? new Response("{}", { status: 202 })
+      : new Response(JSON.stringify(chat)),
+  );
+  const identity = { session_id: crypto.randomUUID(), tab_id: crypto.randomUUID() };
+  const popup = createPopup("http://localhost:8080/events", () => identity);
+  let last: any;
+  popup.watch((value) => (last = value));
+  await settle();
+  assert.equal(await popup.say("  Any pools?  "), true);
+  const post = env.fetch.mock.calls.find((c) => String(c.arguments[0]).endsWith("/chat"))!;
+  assert.equal(post.arguments[0], "http://localhost:8080/chat");
+  assert.deepEqual(JSON.parse(String(post.arguments[1]!.body)), {
+    ...identity,
+    text: "Any pools?",
+  });
+  assert.equal(post.arguments[1]!.credentials, "omit");
+  await settle();
+  assert.equal(last.chat_pending, true);
+  assert.equal(last.messages[0].text, "Any pools?");
+  const calls = env.fetch.mock.callCount();
+  assert.equal(await popup.say("   "), false);
+  assert.equal(await popup.say("a".repeat(501)), false);
+  assert.equal(env.fetch.mock.callCount(), calls);
+  env.fetch.mock.mockImplementation(async () => new Response("{}", { status: 409 }));
+  assert.equal(await popup.say("Hello"), false);
+  env.fetch.mock.mockImplementation(
+    async () =>
+      new Response(JSON.stringify({ ...chat, messages: [{ role: "system", text: "x", at: "" }] })),
+  );
+  last = undefined;
+  await popup.act("close", "invite-1");
+  assert.equal(last, undefined);
   popup.destroy();
 });

@@ -5,12 +5,23 @@ export type Invitation = {
   text: string;
   status: "offered" | "shown" | "dismissed" | "opened";
 };
+export type ChatMessage = {
+  role: "visitor" | "assistant";
+  text: string;
+  at: string;
+  /** An apology standing in for a reply that could not be written. */
+  failed?: boolean;
+};
 export type Popup = {
   offer?: Invitation | null;
   current: Invitation | null;
   chat_open: boolean;
   engaged: boolean;
   dismissals: number;
+  /** The shared conversation, once chat has started. */
+  messages?: ChatMessage[];
+  /** True while the backend writes a reply. */
+  chat_pending?: boolean;
 };
 export type Presence = { visible: boolean; focused: boolean; payment: boolean; typingAt?: number };
 export type PopupAction = "shown" | "dismiss" | "open" | "close";
@@ -75,7 +86,7 @@ export function createPopup(endpoint: string, identity: () => Identity | undefin
         const { value, done } = await reader.read();
         if (done) break;
         size += value.byteLength;
-        if (size > 16_384) {
+        if (size > 262_144) {
           await reader.cancel();
           return false;
         }
@@ -129,6 +140,28 @@ export function createPopup(endpoint: string, identity: () => Identity | undefin
       if (listener) void request();
     },
     act: (action: PopupAction, id: string) => request(action, id),
+    // Sends one visitor message; the reply arrives through watch() as messages and chat_pending.
+    async say(text: string): Promise<boolean> {
+      const ids = identity();
+      const value = text.trim();
+      if (stopped || !ids || !value || [...value].length > 500 || navigator.onLine === false)
+        return false;
+      try {
+        const response = await fetch(new URL("/chat", endpoint).href, {
+          method: "POST",
+          credentials: "omit",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(10_000),
+          body: JSON.stringify({ ...ids, text: value }),
+        });
+        if (response.status !== 202) return false;
+      } catch {
+        return false;
+      }
+      if (listener) void request();
+      return true;
+    },
     destroy() {
       stopped = true;
       subscription++;
@@ -151,6 +184,24 @@ function validPopup(value: Popup): boolean {
     return false;
   const c = value.current;
   if (value.offer !== undefined && !validInvitation(value.offer)) return false;
+  if (value.chat_pending !== undefined && typeof value.chat_pending !== "boolean") return false;
+  if (
+    value.messages !== undefined &&
+    !(
+      Array.isArray(value.messages) &&
+      value.messages.length <= 64 &&
+      value.messages.every(
+        (m) =>
+          m &&
+          (m.role === "visitor" || m.role === "assistant") &&
+          typeof m.text === "string" &&
+          m.text.length <= 2000 &&
+          typeof m.at === "string" &&
+          (m.failed === undefined || typeof m.failed === "boolean"),
+      )
+    )
+  )
+    return false;
   return validInvitation(c);
 }
 
