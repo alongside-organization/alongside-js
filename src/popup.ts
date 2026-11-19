@@ -143,7 +143,8 @@ export function createPopup(endpoint: string, identity: () => Identity | undefin
     // Sends one visitor message; the reply arrives through watch() as messages and chat_pending.
     async say(text: string): Promise<boolean> {
       const ids = identity();
-      const value = text.trim();
+      // The backend accepts newlines but no other control characters; tabs and CRs become spaces.
+      const value = text.replace(/[\t\r]/g, " ").trim();
       if (stopped || !ids || !value || [...value].length > 500 || navigator.onLine === false)
         return false;
       try {
@@ -195,7 +196,7 @@ function validPopup(value: Popup): boolean {
           m &&
           (m.role === "visitor" || m.role === "assistant") &&
           typeof m.text === "string" &&
-          m.text.length <= 2000 &&
+          m.text.length <= 3000 &&
           typeof m.at === "string" &&
           (m.failed === undefined || typeof m.failed === "boolean"),
       )

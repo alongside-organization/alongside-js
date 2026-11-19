@@ -120,7 +120,7 @@ test("say posts one trimmed message, refreshes state and rejects invalid text or
   let last: any;
   popup.watch((value) => (last = value));
   await settle();
-  assert.equal(await popup.say("  Any pools?  "), true);
+  assert.equal(await popup.say("  Any\tpools?  "), true);
   const post = env.fetch.mock.calls.find((c) => String(c.arguments[0]).endsWith("/chat"))!;
   assert.equal(post.arguments[0], "http://localhost:8080/chat");
   assert.deepEqual(JSON.parse(String(post.arguments[1]!.body)), {
@@ -137,6 +137,18 @@ test("say posts one trimmed message, refreshes state and rejects invalid text or
   assert.equal(env.fetch.mock.callCount(), calls);
   env.fetch.mock.mockImplementation(async () => new Response("{}", { status: 409 }));
   assert.equal(await popup.say("Hello"), false);
+  // 1,500 emoji are 3,000 UTF-16 units: still a valid reply.
+  env.fetch.mock.mockImplementation(
+    async () =>
+      new Response(
+        JSON.stringify({
+          ...chat,
+          messages: [{ role: "assistant", text: "🌴".repeat(1500), at: "" }],
+        }),
+      ),
+  );
+  await popup.act("close", "invite-1");
+  assert.equal(last.messages[0].text.length, 3000);
   env.fetch.mock.mockImplementation(
     async () =>
       new Response(JSON.stringify({ ...chat, messages: [{ role: "system", text: "x", at: "" }] })),
