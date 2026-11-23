@@ -1,65 +1,144 @@
 # Alongside JavaScript SDK
 
-Framework-independent browser events for the local Alongside prototype. No runtime dependencies, travel types, UI or automatic content capture. Server-side imports are safe; initialize in a browser lifecycle.
+[![npm](https://img.shields.io/npm/v/@runalongside/js)](https://www.npmjs.com/package/@runalongside/js)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Setup
+The browser SDK for [Alongside](https://runalongside.com), an AI sales agent that understands what a visitor is looking for and offers help at the right moment. The SDK sends visitor events to the Alongside backend and lets your site show Alongside's chat invitations and conversations in its own UI.
 
-Use Node 24+ and pnpm:
+- No runtime dependencies, framework-independent, ESM with TypeScript types.
+- Safe to import during server rendering; it only touches browser APIs once you create a client.
+- Collects only what you send, plus anonymous session and page context. No form text, query strings, referrers or fingerprinting.
+
+## Installation
+
+```sh
+npm install @runalongside/js
+# or
+pnpm add @runalongside/js
+# or
+yarn add @runalongside/js
+```
+
+## Quick start
+
+```ts
+import { createAlongside } from "@runalongside/js";
+
+const alongside = createAlongside({ endpoint: "https://api.runalongside.com/events" });
+
+alongside.page(); // on load and after each client-side route change
+alongside.track("listing_viewed", { listing_id: "stay-123" });
+```
+
+Create one client per page load, in the browser (for example in a React `useEffect` or your framework's client entry point).
+
+## Usage
+
+### Track events
+
+```ts
+alongside.track("search_submitted", { destination: "Mallorca", nights: 7 });
+```
+
+`track` copies the properties (any JSON value) and returns immediately. Events are batched and sent in the background. Invalid, unserialisable or oversized events are dropped without affecting your site. Event names and properties are yours to choose; agree them with your Alongside contact.
+
+### Page visits
+
+```ts
+alongside.page();
+```
+
+Call `page()` on first load and after every pathname change. It sends `page_viewed`, then `page_updated` with the visible time every 10 seconds while the tab is visible, on visibility changes and on departure. Calls for the same pathname, and query or hash changes, are ignored. The SDK does not patch the History API, so single-page apps call `page()` from their router.
+
+### Chat invitations and conversation
+
+Alongside decides when to invite a visitor to chat; your site renders the invitation and chat panel.
+
+```ts
+const stop = alongside.popup.watch((popup) => {
+  if (popup?.offer) alongside.popup.act("shown", popup.offer.id); // acknowledge before showing
+  render(popup?.current, popup?.messages, popup?.chat_pending); // your UI
+});
+
+// Keep presence current so invitations appear only when the visitor can see them.
+alongside.popup.presence({
+  visible: !document.hidden,
+  focused: document.hasFocus(),
+  payment: false,
+});
+
+// Visitor actions
+await alongside.popup.act("open", invitation.id); // also "dismiss" and "close"
+await alongside.popup.say("Is there anything cheaper?"); // true when accepted
+```
+
+- Treat `offer` as pending: send `shown` with its ID, then render only the acknowledged `current`.
+- Replies arrive through `watch` in `messages`; `chat_pending` is true while Alongside writes one. Render message text as plain text.
+- Set `payment: true` on checkout or payment pages; Alongside will not interrupt them. `typingAt` (a timestamp of the last keystroke) stays local; only its age is sent, never keys or values.
+
+### Flush and clean up
+
+```ts
+await alongside.flush(); // send everything currently deliverable
+await alongside.destroy(); // stop collecting, send what remains, remove timers and listeners
+```
+
+## API
+
+| Member                                                     | Description                                                                                |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `createAlongside({ endpoint })`                            | Creates a client. `endpoint` is your Alongside events URL.                                 |
+| `track(name, properties?)`                                 | Queues an event.                                                                           |
+| `page()`                                                   | Starts a page visit for the current pathname.                                              |
+| `flush()`                                                  | Resolves after attempting delivery of queued events.                                       |
+| `destroy()`                                                | Stops collection and cleans up.                                                            |
+| `popup.watch(callback)`                                    | Subscribes to invitation and chat state (one subscriber). Returns an unsubscribe function. |
+| `popup.presence({ visible, focused, payment, typingAt? })` | Reports whether the visitor can see the page.                                              |
+| `popup.act(action, invitationId)`                          | Sends `shown`, `dismiss`, `open` or `close`. Resolves `false` on failure.                  |
+| `popup.say(text)`                                          | Sends a chat message (1–500 characters) while chat is open.                                |
+
+Exported types: `Options`, `Event`, `Properties`, `Json`, `Popup`, `Invitation`, `ChatMessage`, `Presence`, `PopupAction`.
+
+## Data and delivery
+
+- **Collected automatically:** event ID, capture time (UTC), anonymous session ID, tab ID and pathname. No cookies; requests omit credentials.
+- **Sessions:** shared by same-origin tabs through `localStorage`; they end after 30 minutes without events or 24 hours in total. If storage is blocked, the SDK keeps identity in memory.
+- **Batching:** every 3 seconds, at most 100 events or 64 KiB per request, at most 1,000 queued (newest dropped beyond that).
+- **Retries:** network errors, 408, 429 and 5xx retry with jittered exponential backoff (from 3 seconds, capped at 30 minutes; at most 10 retries per batch). Delivery pauses while offline. On page hide or exit, the SDK uses `sendBeacon`.
+- **Best effort:** the queue is in memory, so closing the tab can lose events, and retries can duplicate them; the backend deduplicates by event ID.
+- **Chat polling:** while watched, the SDK polls `/interventions` on the endpoint's origin once a second after each response. Polling never creates events or extends the session.
+
+The wire format is defined by the Alongside backend (`alongside-backend/docs/events.md`).
+
+## Browser support
+
+Modern evergreen browsers. Web Locks keep session creation consistent across tabs; without them, two tabs opened at the same moment may briefly start separate sessions.
+
+## Development
+
+Requires Node.js 24+ and pnpm.
 
 ```sh
 pnpm install
-pnpm build
-```
-
-```ts
-import { createAlongside } from "alongside-js";
-
-const alongside = createAlongside({ endpoint: "http://localhost:8080/events" });
-alongside.page(); // On initial load and after pathname changes.
-alongside.track("listing_viewed", { listing_id: "stay-123" });
-await alongside.flush();
-// On integration teardown:
-await alongside.destroy();
-```
-
-`track` captures a JSON copy and returns immediately. Invalid, unserializable or oversized events are dropped without interrupting the website. `flush()` attempts currently deliverable events; failures retain their retry schedule. `destroy()` stops collection, attempts beacon delivery, aborts outstanding HTTP work and removes timers/listeners.
-
-## Selected prototype defaults
-
-Only the endpoint is configurable; the rest are prototype defaults.
-
-- Modern browsers. Web Locks serialize shared session creation/expiry; without them, simultaneous first creation can race.
-- Same-origin tabs share a localStorage session: 30 minutes without captured events or 24 hours maximum. Opted-in visible-page updates count as activity. SessionStorage distinguishes tabs and retains their identity on ordinary reload/navigation; duplicated tabs discard copied identity. Denied storage falls back to document memory.
-- Three-second batches, at most 100 events and 64 KiB UTF-8 per request. At most 1,000 pending/in-flight events, including captures awaiting identity; drop newest on overflow.
-- Retry network failures, 408, 429 and 5xx: at most three network retries and ten retries total per batch. Backoff starts at three seconds, doubles to a 30-minute base cap, and uses 50–150% jitter. Ten-second request timeout. Offline pauses delivery; online resumes it.
-- In-memory pending events/retries. Hidden/page-exit lifecycle attempts `sendBeacon`. Delivery is best effort: termination can lose events and in-flight requests may be duplicated. No durable queue; the backend deduplicates retained event IDs.
-- Automatic fields: event UUID, ISO UTC capture timestamp, session UUID, tab UUID and pathname. No query, fragment, referrer, fingerprint, form text or project key. Fetch omits credentials. Retries preserve the exact encoded batch.
-
-`page()` opts into generic visits: call it initially and after pathname navigation. Calls on the same pathname do nothing; query/hash changes are ignored. A new document or bfcache restoration starts a new visit. `page_viewed` begins the visit; `page_updated` reports cumulative monotonic visible time every ten seconds while visible, at visibility changes, and on departure. Both include `visit_id`, `started_at`, `visible_ms` and `state` (`visible`, `hidden`, `left`). Departures retain the old pathname. Hidden time is excluded; attention is not inferred. There is no automatic History API patching or page-content capture.
-
-The backend owns the wire contract (`alongside-backend/docs/events.md`), including these page events. Other event names and properties belong to the website. The SDK never calls models.
-
-## Layout and verification
-
-`src/index.ts` exports the client and wire types; `client.ts` owns lifecycle, `pages.ts` visible-page sampling, `events.ts` wire types/limits, `session.ts` identity and `delivery/` batching/transport. `tests/` mirrors these modules using Node's built-in runner with controlled clocks/network responses.
-
-```sh
-pnpm test
+pnpm test          # Node's test runner with controlled clocks and network
 pnpm typecheck
-pnpm build
-pnpm format
-pnpm format:check
+pnpm build         # ESM and type declarations in dist/
+pnpm format:check  # or `pnpm format` to fix
 ```
 
-Build output is ESM plus declarations in `dist/`. Real-browser checks live in `test-site/tests/alongside-flow.js`.
+| Path             | Owns                            |
+| ---------------- | ------------------------------- |
+| `src/index.ts`   | Public exports                  |
+| `src/client.ts`  | Client lifecycle                |
+| `src/pages.ts`   | Page visits and visible time    |
+| `src/popup.ts`   | Invitations, chat and polling   |
+| `src/session.ts` | Session and tab identity        |
+| `src/events.ts`  | Wire types and limits           |
+| `src/delivery/`  | Batching, retries and transport |
+| `tests/`         | Tests mirroring `src/`          |
 
-## Popup entry
+Real-browser checks live in the test site (`test-site/tests/alongside-flow.js`). See [CONTRIBUTING.md](CONTRIBUTING.md) for the merge checklist and release process.
 
-- `client.popup.watch(callback)` subscribes to popup state (one subscriber; returns an unsubscribe function).
-- `popup.presence({ visible, focused, payment, typingAt })` reports presence. `typingAt` is local only; requests carry an age, never keys or values.
-- `popup.act(action, invitationId)` sends `shown`, `dismiss`, `open` or `close`.
-- `popup.say(text)` sends one chat message (1–500 characters) to `/chat` while chat is open and resolves `true` when accepted. The reply arrives through `watch` as `messages`, with `chat_pending` true meanwhile. Render message text as plain text.
+## License
 
-Treat `offer` as pending: request `shown` with its ID, then render only the acknowledged `current`. The website decides which pages count as payment.
-
-The SDK polls the fixed `/interventions` path at the event endpoint's origin, once a second after each response, one request at a time and without credentials. Actions queue up to eight, with a 10 s timeout; failed actions return false. Responses are capped at 256 KiB and contain only the invitation, chat flags and the shared conversation. Polling does not create events or renew the session. The backend owns cross-tab state and timing.
+[MIT](LICENSE)
