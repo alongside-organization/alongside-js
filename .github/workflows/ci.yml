@@ -34,6 +34,8 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # npm trusts only this environment, which GitHub restricts to main.
+    environment: npm
     # One release at a time; a newer push waits rather than interrupting a publish.
     concurrency:
       group: release
